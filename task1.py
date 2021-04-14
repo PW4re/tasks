@@ -35,21 +35,24 @@ class Parser:
 
 
 class WhoisQuestioner:
-    def __init__(self, addresses):
-        self.addresses = addresses
+    def __init__(self, target):
+        self.top_level_domain = socket.getfqdn(target)
+        self.addresses = Parser.parse_output(target)
         self.port = 43
-        self.host = socket.gethostbyaddr('www.iana.org.')[2][-1]
+        self.host = socket.gethostbyname('whois.iana.org.')
 
     def ask(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as m_socket:
-            print(self.host)
-            m_socket.connect((self.host, self.port))
-            m_socket.sendall(b'abcdefg')
-            data = m_socket.recv(1024)
-            print(repr(data))
-
+        for ip in self.addresses:
+            print(socket.getfqdn('87.250.250.242'))
+        # with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as m_socket:
+        #     print(self.host)
+        #     m_socket.connect((self.host, self.port))
+        #     m_socket.sendall(b'ru\n\r')
+        #     data = m_socket.recv(1024)
+        #     print(repr(data))
 
 
 if __name__ == '__main__':
-    questioner = WhoisQuestioner(['a'])
-    questioner.ask()
+    print(socket.getfqdn('79.133.87.167'))
+    # questioner = WhoisQuestioner(Parser.parse_output('ya.ru'))
+    # questioner.ask()
