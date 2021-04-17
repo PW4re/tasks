@@ -34,25 +34,36 @@ class Parser:
         return result
 
 
+class WhoisParser:
+    NREFER = 'nrefer:'
+
+    def __init__(self):
+        pass
+
+    @classmethod
+    def parse_IANA_answer(cls, answer: str) -> str:
+        for line in answer.split('\n'):
+            if line.startswith(cls.NREFER):
+                return line.replace(cls.NREFER, '').replace(' ', '').strip()
+
+
 class WhoisQuestioner:
-    def __init__(self, target):
-        self.top_level_domain = socket.getfqdn(target)
-        self.addresses = Parser.parse_output(target)
+    def __init__(self, addresses):
+        self.addresses = addresses
         self.port = 43
-        self.host = socket.gethostbyname('whois.iana.org.')
+        self.host_IANA = socket.gethostbyname('whois.iana.org.')
 
     def ask(self):
-        for ip in self.addresses:
-            print(socket.getfqdn('87.250.250.242'))
-        # with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as m_socket:
-        #     print(self.host)
-        #     m_socket.connect((self.host, self.port))
-        #     m_socket.sendall(b'ru\n\r')
-        #     data = m_socket.recv(1024)
-        #     print(repr(data))
+        ip_with_registrator = {}
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as m_socket:
+            m_socket.connect((self.host_IANA, self.port))
+            for ip in self.addresses:
+                m_socket.sendall(b'\n\r')
+            data = m_socket.recv(1024)
+            print(repr(data))
 
 
 if __name__ == '__main__':
-    print(socket.getfqdn('79.133.87.167'))
+    WhoisQuestioner(['as']).ask()
     # questioner = WhoisQuestioner(Parser.parse_output('ya.ru'))
     # questioner.ask()
