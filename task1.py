@@ -3,19 +3,23 @@ import socket
 
 from dataclasses import dataclass
 from subprocess import Popen, PIPE
-from sys import platform
+from sys import platform, argv
 from typing import List, Tuple
 from multiprocessing.pool import ThreadPool
-from itertools import zip_longest
 
 
 class UtilityParser:
     @classmethod
     def parse_output(cls, target: str):
-        if platform == 'linux' or platform == 'linux2' or platform == 'darwin':
-            cls._parse_traceroute_output(target)
-        elif platform == 'win32':
-            return cls._parse_tracert_output(target)
+        try:
+            if (platform == 'linux' or platform == 'linux2'
+                    or platform == 'darwin'):
+                cls._parse_traceroute_output(target)
+            elif platform == 'win32':
+                return cls._parse_tracert_output(target)
+        except (OSError, ValueError):
+            print("Something was wrong! Please, try again...")
+            exit(2)
 
     @staticmethod
     def _parse_traceroute_output(target: str) -> List[bytes]:
@@ -51,7 +55,7 @@ class WhoisParser:
     @classmethod
     def parse_regional_registrar_answer(
             cls, answer: bytes) -> Tuple[str, str, str]:
-        country, origin, role = '', '', ''
+        country, origin, role = b'', b'', b''
         for line in answer.split(b'\n'):
             if line.startswith(cls._COUNTRY):
                 country = line.replace(cls._COUNTRY, b'').strip()
@@ -78,9 +82,6 @@ class WhoisQuestioner:
             self.country: str = country
             self.provider: str = provider
 
-        def __str__(self):
-            return f'{self.index}, {self.AS_number}, {self.country}, {self.provider}'
-
     def __init__(self, addresses):
         self.addresses: List[bytes] = addresses
         self.port: int = 43
@@ -104,20 +105,27 @@ class WhoisQuestioner:
         self._print_table()
 
     def _print_table(self):
-        lines = []
-        columns_len = {
-            "Порядковый номер": 0, "IP-адрес": 0, "AS": 0,
-            "Страна": 0, "Провайдер": 0
-        }
+        lines: List[tuple] = []
+        head = ("Порядковый номер", "IP-адрес", "AS", "Страна", "Провайдер")
+        lengths: List[int] = [len(x) for x in head]
 
         for ip in self.ip_with_info:
             info = self.ip_with_info[ip]
-            lines.append(
-                (info.index, ip, info.AS_number, info.country, info.provider)
-            )
+            line = (str(info.index), ip.decode('utf-8'), info.AS_number,
+                    info.country.capitalize(), info.provider)
+            lines.append(line)
+            for i in range(len(line)):
+                lengths[i] = max(lengths[i], len(line[i]))
 
-        # Что-то сложно...
+        print('|'.join((head[i].center(lengths[i]) for i in range(len(head)))))
+        print('|'.join('-' * length for length in lengths))
 
+        for line in lines:
+            parts: List[str] = []
+            for i in range(len(line)):
+                parts.append(line[i].center(lengths[i]))
+
+            print('|'.join(parts))
 
     def _ask_IANA(self, ip) -> str:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as m_socket:
@@ -135,7 +143,7 @@ class WhoisQuestioner:
             sock.sendall(b'%b\r\n' % ip)
             full_answer = b''
             while True:
-                data = sock.recv(65536)
+                data = sock.recv(4096)
                 if not data:
                     break
                 full_answer += data
@@ -144,6 +152,16 @@ class WhoisQuestioner:
 
 
 if __name__ == '__main__':
-    # WhoisQuestioner(['as']).ask()
-    questioner = WhoisQuestioner(UtilityParser.parse_output('ya.ru'))
+    if len(argv) != 2:
+        print('Please, enter only one argument: ' +
+              'IP_address or hostname of destination host')
+        exit(1)
+
+    host = argv[1]
+    try:
+        socket.gethostbyname(host)
+    except socket.error:
+        print(f'Name or service not known (Couldn\'t find host {host})')
+        exit(7)
+    questioner = WhoisQuestioner(UtilityParser.parse_output(host))
     questioner.build_table()
