@@ -17,6 +17,9 @@ class UtilityParser:
                 cls._parse_traceroute_output(target)
             elif platform == 'win32':
                 return cls._parse_tracert_output(target)
+            else:
+                print("Unknown OS")
+                exit(5)
         except (OSError, ValueError):
             print("Something was wrong! Please, try again...")
             exit(2)
