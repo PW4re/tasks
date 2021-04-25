@@ -14,9 +14,9 @@ class UtilityParser:
         try:
             if (platform == 'linux' or platform == 'linux2'
                     or platform == 'darwin'):
-                cls._parse_traceroute_output(target)
+                return cls._parse_utility_output(target, 'traceroute', '-n')
             elif platform == 'win32':
-                return cls._parse_tracert_output(target)
+                return cls._parse_utility_output(target, 'tracert', '-d')
             else:
                 print("Unknown OS")
                 exit(5)
@@ -25,14 +25,10 @@ class UtilityParser:
             exit(2)
 
     @staticmethod
-    def _parse_traceroute_output(target: str) -> List[bytes]:
-        pass
-
-    @staticmethod
-    def _parse_tracert_output(target: str) -> List[bytes]:
+    def _parse_utility_output(target: str, utility: str, flag: str) -> List[bytes]:
         split_regex = re.compile(b'\s+')
         ip_regex = re.compile(b'^\d{1,3}\\.\d{1,3}\\.\d{1,3}\\.\d{1,3}$')
-        with Popen(f'tracert -d {target}', shell=True, stdout=PIPE) as proc:
+        with Popen(f'{utility} {flag} {target}', shell=True, stdout=PIPE) as proc:
             result = []
             for line in proc.stdout.readlines():
                 for res in re.split(split_regex, line):
