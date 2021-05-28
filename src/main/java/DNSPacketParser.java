@@ -8,7 +8,6 @@ import RRFieldCodes.RRType;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.BitSet;
 import java.util.List;
 
 public class DNSPacketParser {
@@ -70,6 +69,11 @@ public class DNSPacketParser {
     private static int writeInStringBuilderAndGetIndex(StringBuilder sb, byte[] fragment, int index) {
         byte length;
         while (fragment[index] != 0) {
+            if ((fragment[index] & -0b1000000) == -0b1000000) {  // нашли указатель
+                readStringByCompressedRef(fragment, sb, index);
+                index++;
+                break;
+            }
             length = fragment[index];
             index++;
             byte[] bytes = Arrays.copyOfRange(fragment, index, index + length);
@@ -87,11 +91,10 @@ public class DNSPacketParser {
             String name = parseNamePart(fragment);
             short type = (short) ((fragment[currentIndex] << 8) + fragment[++currentIndex]);
             short clazz = (short) ((fragment[++currentIndex] << 8) + fragment[++currentIndex]);
-            long ttl = (fragment[++currentIndex] << 24) + (fragment[++currentIndex] << 16 )+
+            long ttl = (fragment[++currentIndex] << 24) + (fragment[++currentIndex] << 16) +
                     (fragment[++currentIndex] << 8) + fragment[++currentIndex];
             char rdLength = (char) ((fragment[++currentIndex] << 8) + fragment[++currentIndex]);
-            String rData = new String(Arrays.copyOfRange(fragment, ++currentIndex, currentIndex + rdLength),
-                    StandardCharsets.US_ASCII);
+            String rData = parseRData(type, clazz, fragment, rdLength);
 
             sections.add(new ParsedRR(name, type, clazz, ttl, rdLength, rData));
         }
@@ -103,37 +106,48 @@ public class DNSPacketParser {
         StringBuilder resBuilder = new StringBuilder();
         while (fragment[currentIndex] != 0 && !isNameFinish(fragment, currentIndex)) {
             if ((fragment[currentIndex] & -0b1000000) == -0b1000000) {  // нашли указатель
-                var v1 = (fragment[currentIndex] & 0b00_111111) << 8;
-                var v2 = fragment[++currentIndex];
-                var ref = v1 + v2;
-                writeInStringBuilderAndGetIndex(
-                        resBuilder,
-                        fragment,
-                         ref);
-                currentIndex++;
+                readStringByCompressedRef(fragment, resBuilder, currentIndex);
+                currentIndex += 2;
             } else {
                 resBuilder.append(parseByQNameRules(fragment));
             }
         }
-        //currentIndex++;
 
         return resBuilder.toString();
+    }
+
+    private static void readStringByCompressedRef(byte[] fragment, StringBuilder resBuilder, int index){
+        var v1 = (fragment[index] & 0b00_111111) << 8;
+        var v2 = fragment[++index];
+        var ref = v1 + v2;
+        writeInStringBuilderAndGetIndex(
+                resBuilder,
+                fragment,
+                ref);
     }
 
     private static boolean isNameFinish(byte[] fragment, int index) {
         return fragment[index] == 0 && (index + 1 >= fragment.length || fragment[index + 1] >> 1 == 0);
     }
 
-//    private static String parseRData(short type, short clazz) {
-//        if (clazz != RRClass.IN.getValue()) System.out.println("Unexpected class of resource record");
-//        if (type == (short) RRType.A.getValue()) {
-//
-//        } else if (type == (short) RRType.AAAA.getValue()) {
-//
-//        } else if (type == (short) RRType.NS.getValue()) {
-//
-//        } else if (type == (short) RRType.PTR.getValue()) {
-//
-//        }
-//    }
+    private static String parseRData(short type, short clazz, byte[] fragment, char len) {
+        currentIndex++;
+        StringBuilder res = new StringBuilder();
+        if (clazz != RRClass.IN.getValue()) System.out.println("Unexpected class of resource record");
+        if (type == (short) RRType.A.getValue()) {  // IPv4
+            for (int _i = 0 ; _i < len; _i++)
+                res.append(fragment[currentIndex++] & 0xff).append(".");
+            res.deleteCharAt(res.length() - 1);
+        } else if (type == (short) RRType.AAAA.getValue()) {  // IPv6
+            for (int i = 1 ; i < len; i+=2)
+                res.append(String.format("%04X", ((fragment[currentIndex + i - 1] & 0xff) << 8) + (fragment[currentIndex + i] & 0xff)))
+                        .append(":");
+            currentIndex += len;
+            res.deleteCharAt(res.length() - 1);
+        } else if (type == (short) RRType.NS.getValue() || type == (short) RRType.PTR.getValue()) {
+            res.append(parseByQNameRules(fragment));
+        }
+
+        return res.toString();
+    }
 }
