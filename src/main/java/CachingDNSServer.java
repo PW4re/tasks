@@ -1,17 +1,32 @@
-import ParsedDNSPacket.ParsedDNSPacket;
-
 import java.io.IOException;
 import java.net.*;
+import java.nio.ByteBuffer;
+import java.nio.channels.AsynchronousServerSocketChannel;
+import java.nio.channels.AsynchronousSocketChannel;
+import java.util.Arrays;
+import java.util.concurrent.ExecutionException;
+import java.util.stream.Stream;
 
 public class CachingDNSServer {
     private static final int SERVER_PORT = 53;
+    private static final String DNS_IP = "199.7.83.42";  // ICANN root server
+    private static final byte[] THIS_IP = new byte[] { (byte) 192, (byte) 168, 1, 3 };
 
 
-    public static void main(String[] args) throws UnknownHostException {  // обязательно обработать
-        System.out.println(InetAddress.getLocalHost());
+    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {  // обязательно обработать
+//        System.out.println("My address: " + InetAddress.getLocalHost());
+//        AsynchronousServerSocketChannel server = AsynchronousServerSocketChannel.open();
+//        server.bind(new InetSocketAddress(InetAddress.getLocalHost(), SERVER_PORT));
+//        var a = server.accept();
+//        ByteBuffer buff = ByteBuffer.allocate(512);
+//        var chan = a.get();
+//        System.out.println(chan.isOpen());
+//        chan.write(buff);
+//        System.out.println(Arrays.toString(buff.array()));
+
         try (DatagramSocket generalSocket = new DatagramSocket(SERVER_PORT, InetAddress.getLocalHost())) {
             Receiver r = new Receiver(generalSocket);
-            Sender s = new Sender("8.8.8.8", generalSocket);
+            Sender s = new Sender(DNS_IP, generalSocket);
             while (true) {
                 var pack = r.recv();
                 s.send(pack.getData());
@@ -22,7 +37,6 @@ public class CachingDNSServer {
             e.printStackTrace();
         }
     }
-
 
     private static class Sender {
         private final String defaultDnsIp;
@@ -35,7 +49,7 @@ public class CachingDNSServer {
 
         protected void send(byte[] packet) throws UnknownHostException {
             // packet[2] &= 0b1111111_0_11111111;  // RD := false
-            DatagramPacket dataPack = new DatagramPacket(packet, packet.length, InetAddress.getByName("8.8.8.8"), SERVER_PORT);
+            DatagramPacket dataPack = new DatagramPacket(packet, packet.length, InetAddress.getByName(DNS_IP), SERVER_PORT);
             dataPack.setAddress(InetAddress.getByName(defaultDnsIp));
             try {
                 socket.send(dataPack);

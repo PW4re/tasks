@@ -1,5 +1,7 @@
 package ParsedDNSPacket;
 
+import jdk.jshell.spi.ExecutionControl;
+
 public class ParsedRR {
     private final String name, rData;
     private final short type, clazz;
@@ -26,6 +28,10 @@ public class ParsedRR {
     public String get_rData() { return rData; }
 
     public short getType() { return type; }
+
+//    public byte[] toBinary() {
+//        throw new ExecutionControl.NotImplementedException("binar");
+//    }
 
     @Override
     public String toString() {
