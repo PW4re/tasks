@@ -1,4 +1,4 @@
-package RRFieldCodes;
+package rr_field_codes;
 
 public enum RRClass {
     IN(1),  // most relevant

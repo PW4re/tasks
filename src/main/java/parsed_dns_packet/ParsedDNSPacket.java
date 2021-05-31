@@ -1,4 +1,4 @@
-package ParsedDNSPacket;
+package parsed_dns_packet;
 
 import java.util.List;
 

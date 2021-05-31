@@ -1,6 +1,6 @@
-package ParsedDNSPacket;
+package parsed_dns_packet;
 
-public class ParsedQuestionSection {
+public class ParsedQuestionSection implements ParsedSection {
     private final String qName;
     private final char qType, qClass;
 

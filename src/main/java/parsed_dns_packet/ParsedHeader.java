@@ -1,10 +1,9 @@
-package ParsedDNSPacket;
+package parsed_dns_packet;
 
-public class ParsedHeader {
+public class ParsedHeader implements ParsedSection {
     private final char id, qdCount, anCount, nsCount, arCount;
     private final boolean qr, aa, tc, rd, ra;
     private final byte opcode, rCode; // actually 4-bit
-    // Не храним здесь Z - 0b000
 
     public ParsedHeader(char id, boolean qr, byte opcode,
                            boolean aa, boolean tc, boolean rd, boolean ra,

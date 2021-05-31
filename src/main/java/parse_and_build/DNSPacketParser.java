@@ -1,9 +1,11 @@
-import ParsedDNSPacket.ParsedDNSPacket;
-import ParsedDNSPacket.ParsedHeader;
-import ParsedDNSPacket.ParsedQuestionSection;
-import ParsedDNSPacket.ParsedRR;
-import RRFieldCodes.RRClass;
-import RRFieldCodes.RRType;
+package parse_and_build;
+
+import parsed_dns_packet.ParsedDNSPacket;
+import parsed_dns_packet.ParsedHeader;
+import parsed_dns_packet.ParsedQuestionSection;
+import parsed_dns_packet.ParsedRR;
+import rr_field_codes.RRClass;
+import rr_field_codes.RRType;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -78,14 +80,14 @@ public class DNSPacketParser {
             index++;
             byte[] bytes = Arrays.copyOfRange(fragment, index, index + length);
             index += length;
-            sb.append(new String(bytes, StandardCharsets.US_ASCII)).append(".");  // Punycode maybe
+            sb.append(new String(bytes, StandardCharsets.US_ASCII)).append(".");
         }
         index++;
 
         return index;
     }
 
-    private static List<ParsedRR> parseRRs(byte[] fragment, int count){
+    private static List<ParsedRR> parseRRs(byte[] fragment, int count) {
         List<ParsedRR> sections = new ArrayList<>();
         for (int _i = 0; _i < count; _i++) {
             String name = parseNamePart(fragment);
@@ -94,16 +96,24 @@ public class DNSPacketParser {
             long ttl = (fragment[++currentIndex] << 24) + (fragment[++currentIndex] << 16) +
                     (fragment[++currentIndex] << 8) + fragment[++currentIndex];
             char rdLength = (char) ((fragment[++currentIndex] << 8) + fragment[++currentIndex]);
-            String rData = parseRData(type, clazz, fragment, rdLength);
+            String rData = null;  // Если встретили тип ресурсных записей, которые не умеем обрабатывать
+            try {
+                rData = parseRData(type, clazz, fragment, rdLength);
+            } catch (UnexpectedRRTypeException ignored) { }
 
             sections.add(new ParsedRR(name, type, clazz, ttl, rdLength, rData));
+
         }
 
         return sections;
     }
 
-    private static String parseNamePart(byte[] fragment) { // это для сжатия
+    private static String parseNamePart(byte[] fragment) {
         StringBuilder resBuilder = new StringBuilder();
+        if (fragment[currentIndex] == 0 && isNameFinish(fragment, currentIndex)) {
+            currentIndex++;
+            return resBuilder.toString();
+        }
         while (fragment[currentIndex] != 0 && !isNameFinish(fragment, currentIndex)) {
             if ((fragment[currentIndex] & -0b1000000) == -0b1000000) {  // нашли указатель
                 readStringByCompressedRef(fragment, resBuilder, currentIndex);
@@ -130,7 +140,7 @@ public class DNSPacketParser {
         return fragment[index] == 0 && (index + 1 >= fragment.length || fragment[index + 1] >> 1 == 0);
     }
 
-    private static String parseRData(short type, short clazz, byte[] fragment, char len) {
+    private static String parseRData(short type, short clazz, byte[] fragment, char len) throws UnexpectedRRTypeException {
         currentIndex++;
         StringBuilder res = new StringBuilder();
         if (clazz != RRClass.IN.getValue()) System.out.println("Unexpected class of resource record");
@@ -140,12 +150,15 @@ public class DNSPacketParser {
             res.deleteCharAt(res.length() - 1);
         } else if (type == (short) RRType.AAAA.getValue()) {  // IPv6
             for (int i = 1 ; i < len; i+=2)
-                res.append(String.format("%04X", ((fragment[currentIndex + i - 1] & 0xff) << 8) + (fragment[currentIndex + i] & 0xff)))
+                res.append(String.format("%04X", (((fragment[currentIndex + i - 1] & 0xff) << 8) & 0xffff) + (fragment[currentIndex + i] & 0xff)))
                         .append(":");
             currentIndex += len;
             res.deleteCharAt(res.length() - 1);
         } else if (type == (short) RRType.NS.getValue() || type == (short) RRType.PTR.getValue()) {
             res.append(parseByQNameRules(fragment));
+        } else {
+            currentIndex += len;
+            throw new UnexpectedRRTypeException();
         }
 
         return res.toString();

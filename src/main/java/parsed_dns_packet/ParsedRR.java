@@ -1,8 +1,6 @@
-package ParsedDNSPacket;
+package parsed_dns_packet;
 
-import jdk.jshell.spi.ExecutionControl;
-
-public class ParsedRR {
+public class ParsedRR implements ParsedSection {
     private final String name, rData;
     private final short type, clazz;
     private final char rdLength;
@@ -28,10 +26,6 @@ public class ParsedRR {
     public String get_rData() { return rData; }
 
     public short getType() { return type; }
-
-//    public byte[] toBinary() {
-//        throw new ExecutionControl.NotImplementedException("binar");
-//    }
 
     @Override
     public String toString() {
