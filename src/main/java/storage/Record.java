@@ -3,7 +3,9 @@ package storage;
 import parsed_dns_packet.ParsedRR;
 import rr_field_codes.RRSemantics;
 
-public class Record {
+import java.io.Serializable;
+
+public class Record implements Serializable {
     private final RRSemantics semantics;
     private final ParsedRR record;
 

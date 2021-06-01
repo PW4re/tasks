@@ -83,7 +83,6 @@ public class DNSPacketCrafter {
     }
 
     private static void writeIP(DataOutputStream outputStream, String rData, String delimiter, int radix) throws IOException {
-        System.out.println(Arrays.toString(rData.split(delimiter)));
         Integer[] parts = Arrays.stream(rData.split(delimiter))
                 .map(p -> Integer.parseInt(p, radix))
                 .toArray(Integer[]::new);

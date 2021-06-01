@@ -1,3 +1,5 @@
 package parsed_dns_packet;
 
-public interface ParsedSection { }
+import java.io.Serializable;
+
+public interface ParsedSection extends Serializable { }

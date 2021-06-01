@@ -1,4 +1,3 @@
-import org.apache.commons.lang.ArrayUtils;
 import parse_and_build.DNSPacketCrafter;
 import parsed_dns_packet.ParsedDNSPacket;
 import parsed_dns_packet.ParsedHeader;
@@ -10,59 +9,70 @@ import rr_field_codes.RRType;
 import storage.Record;
 import storage.Storage;
 
-import java.io.IOException;
+import java.io.*;
 import java.net.*;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 public class CachingDNSServer {
     private static final int SERVER_PORT = 53;
     private static InetAddress DNS_IP;
+    private static InetAddress THIS_IP;
 
     private static Sender sender;
     private static Receiver receiver;
-    private static final Storage storage = new Storage();
+
+    private static final AtomicBoolean isStopped;
+    private static Storage storage;
 
     // qname <- packets
     private static final Map<String, List<DatagramPacket>> openRequests = Collections.synchronizedMap(new HashMap<>());
 
     static  {
+        isStopped = new AtomicBoolean(false);
+        storage = new Storage(isStopped);
+        StorageSerializer.deserialize();
         try {
             DNS_IP = InetAddress.getByName("8.8.8.8");
         } catch (UnknownHostException e) {
             System.out.println("Работать не буду:((");
             DNS_IP = InetAddress.getLoopbackAddress();
         }
+
+        try {
+            THIS_IP = InetAddress.getLocalHost();
+        } catch (UnknownHostException e) {
+            THIS_IP = InetAddress.getLoopbackAddress();
+        }
     }
 
-    public static void main(String[] args) throws IOException {  // обязательно обработать
-//        byte a = -0b10000000;
-//        System.out.println(String.format("%8s", Integer.toBinaryString(-0b10000000 + 2)).replace(' ', '0'));
-//        System.out.println(-0b10000000 + 2);
+    public static void main(String[] args) {
+        System.out.println("My address: " + THIS_IP);
 
-        System.out.println("My address: " + InetAddress.getLocalHost());
-
-        try (DatagramSocket generalSocket = new DatagramSocket(SERVER_PORT, InetAddress.getLocalHost())) {
+        try (DatagramSocket generalSocket = new DatagramSocket(SERVER_PORT, THIS_IP)) {
+            generalSocket.setSoTimeout(3000);
             receiver = new Receiver(generalSocket);
             sender = new Sender(generalSocket);
-            while (true) {
+            new Window(isStopped);
+            while (!isStopped.get()) {
                 DatagramPacket pack = receiver.recv();
                 ParsedDNSPacket parsedPack = DNSPacketParser.parse(pack.getData());
                 if (!parsedPack.getHeader().getQR()) {  // определили, что это запрос от клиента
                     List<Record> answersFromStorage = findRRsInStorage(parsedPack, pack);
                     if (answersFromStorage.size() > 0) {
-                        System.out.println("From RAM");
                         sender.sendTo(buildPacket(parsedPack, answersFromStorage), pack.getAddress(), pack.getPort());
                     }
                 } else {
                     for (DatagramPacket clientPacket : findAllRequestsByAnswer(parsedPack)) {
                         sender.sendTo(pack.getData(), clientPacket.getAddress(), clientPacket.getPort());
                         setDataToStorage(DNSPacketParser.parse(clientPacket.getData()));
-                        System.out.println("set data");
                     }
                 }
             }
-        } catch (SocketException | UnknownHostException e) {
+
+            StorageSerializer.serialize();
+        } catch (IOException e) {
             e.printStackTrace();
         }
     }
@@ -103,12 +113,10 @@ public class CachingDNSServer {
         );
         byte[] packet = DNSPacketCrafter.craftAnswer(pack);
 
-        System.out.println(DNSPacketParser.parse(packet));
         return packet;
     }
 
-    private static List<Record> findRRsInStorage(ParsedDNSPacket request, DatagramPacket rawRequest)
-            throws UnknownHostException {
+    private static List<Record> findRRsInStorage(ParsedDNSPacket request, DatagramPacket rawRequest) {
         List<Record> result = new ArrayList<>();
         for (int i = 0; i < request.getQuestion().size(); i++){
             String qName = request.getQuestion().get(i).get_qName();
@@ -156,7 +164,6 @@ public class CachingDNSServer {
                 if (qName.equals(question.get_qName())) {
                     result.addAll(openRequests.get(qName));
                     openRequests.remove(qName);
-                    //System.out.println(qName);
                 }
             }
         }
@@ -196,14 +203,6 @@ public class CachingDNSServer {
         }
     }
 
-//    private static byte[] doSurvey(byte[] request) throws UnknownHostException {
-//        sender.sendTo(request, InetAddress.getByName(DNS_IP), SERVER_PORT);
-//        byte[] ourAnswer = receiver.recv().getData();
-//        System.out.println(DNSPacketParser.parse(ourAnswer));
-//
-//        return ourAnswer;
-//    }
-
     private static class Sender {
         private final DatagramSocket socket;
 
@@ -211,9 +210,8 @@ public class CachingDNSServer {
             this.socket = socket;
         }
 
-        protected void sendTo(byte[] packet, InetAddress addr, int port) throws UnknownHostException {
-            // Очень хотелось разрешать не рекурсивно, но для этого нужно писать парсинг SOA
-            // packet[2] &= 0b1111111_0_11111111;  // RD := false
+        protected void sendTo(byte[] packet, InetAddress addr, int port) {
+            if (port <= 0) return;
             DatagramPacket dataPack = new DatagramPacket(packet, packet.length, addr, port);
             dataPack.setAddress(addr);
             try {
@@ -238,11 +236,44 @@ public class CachingDNSServer {
             try {
                 pack = new DatagramPacket(buffer, buffer.length);
                 socket.receive(pack);
+            } catch (IOException ignored) { }
+
+            return pack;
+        }
+    }
+
+    private static class StorageSerializer {
+        private static final String PATH = "serialized.data";
+
+        protected static void serialize() {
+            File file = new File(PATH);
+            try (OutputStream os = new FileOutputStream(file)) {
+                try (ObjectOutputStream oos = new ObjectOutputStream(new BufferedOutputStream(os))) {
+                    oos.writeObject(storage);
+                    oos.flush();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
             } catch (IOException e) {
                 e.printStackTrace();
             }
+        }
 
-            return pack;
+        protected static void deserialize() {
+            File file = new File(PATH);
+            if (file.length() == 0) return;
+
+            try (InputStream is = new FileInputStream(file)) {
+                try (ObjectInputStream ois = new ObjectInputStream(new BufferedInputStream(is))) {
+                    storage = (Storage) ois.readObject();
+                    storage.setServerIsStopped(false);
+                } catch (ClassNotFoundException e) {
+                    e.printStackTrace();
+                }
+            } catch (FileNotFoundException ignored) { } catch (IOException e) {
+                e.printStackTrace();
+            }
+
         }
     }
 }

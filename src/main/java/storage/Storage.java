@@ -2,22 +2,28 @@ package storage;
 
 import rr_field_codes.RRType;
 
+import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-public class Storage {
+public class Storage implements Serializable {
     private final Map<String, List<String>> nameWithIP;  // domain name <- IP
     private final Map<String, RRsByType> ipWithRecords;  // IP <- RR
     private long lastCheckingTime; // in seconds
+    private final AtomicBoolean m_serverIsStopped;
 
-    public Storage() {  // Интересно, что будет с не полностью разрешенными доменными именами
+    public Storage(AtomicBoolean serverIsStopped) {
         nameWithIP = Collections.synchronizedMap(new HashMap<>());
         ipWithRecords = Collections.synchronizedMap(new HashMap<>());
         lastCheckingTime = 0;
+        m_serverIsStopped = serverIsStopped;
         startTTLChecking();
     }
+
+    public void setServerIsStopped(boolean isStopped) { m_serverIsStopped.set(isStopped); }
 
     public void setDataForName(String name, String ip, RRType type, List<Record> data) {
         if (nameWithIP.containsKey(name)){
@@ -48,7 +54,6 @@ public class Storage {
     }
 
     private void setDataForIP(String ip, List<Record> data, RRType type) {
-        if (type == null) System.out.println("dasdasda");
         if (data == null || type == null) return;
         switch (type) {
             case A:
@@ -92,17 +97,22 @@ public class Storage {
                  return ipWithRecords.get(ip).typeNS;
              case PTR:
                  return ipWithRecords.get(ip).typePTR;
-             default:
-                 // error mb?
          }
          return new ArrayList<>(Collections.emptyList());
     }
 
-    private static class RRsByType {
+    private static class RRsByType implements Serializable {
         private final List<Record> typeA;
         private final List<Record> typeAAAA;
         private final List<Record> typeNS;
         private final List<Record> typePTR;
+
+        private RRsByType() {  // for serialization
+            typeA = new LinkedList<>();
+            typeAAAA = new LinkedList<>();
+            typeNS = new LinkedList<>();
+            typePTR = new LinkedList<>();
+        }
 
         private RRsByType(List<Record> ofA, List<Record> ofAAAA,
                           List<Record> ofNS, List<Record> ofPTR) {
@@ -121,22 +131,21 @@ public class Storage {
     }
 
     private void startTTLChecking() {
-        new Thread(
+        Thread thread = new Thread(
                 () -> {
-                    while (true){
+                    while (!m_serverIsStopped.get()){
                         try {
                             TimeUnit.SECONDS.sleep(10);
                         } catch (InterruptedException ignored) { }
 
                         long delta = System.currentTimeMillis() / 1000 - lastCheckingTime;
                         deleteRecords(findRecordsToDelete(delta));
-                        System.out.println(nameWithIP.size());
-                        System.out.println(ipWithRecords.size());
                         lastCheckingTime = System.currentTimeMillis() / 1000;
                     }
                 }
-        ).start();
-
+        );
+        thread.setDaemon(true);
+        thread.start();
     }
 
     private HashSet<Record> findRecordsToDelete(long delta) {
