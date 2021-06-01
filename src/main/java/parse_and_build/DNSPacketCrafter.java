@@ -34,17 +34,6 @@ public class DNSPacketCrafter {
                 (header.getAA() ? 4 : 0) + (header.getTC() ? 2 : 0) + (header.getRD() ? 1 : 0);
         int secondLine2 = (header.getRA() ? -0b10000000 : 0) +
                 (header.getRA() ? header.get_rCode() : 0);
-
-       // outputStream.writeBoolean(true);
-        //write4BitValue(outputStream, header.getOpcode());
-//        outputStream.writeBoolean(header.getAA());
-//        outputStream.writeBoolean(header.getTC());
-//        outputStream.writeBoolean(header.getRD()); // пишет целый байт
-//        outputStream.writeBoolean(header.getRA());
-//        outputStream.writeBoolean(false);
-//        outputStream.writeBoolean(false);
-//        outputStream.writeBoolean(false);
-//        write4BitValue(outputStream, header.get_rCode());
         outputStream.writeByte(secondLine1);
         outputStream.writeByte(secondLine2);
         outputStream.writeChar(header.getQdCount());
@@ -72,14 +61,6 @@ public class DNSPacketCrafter {
         writeRData(outputStream, resourceRecord);
     }
 
-//    private static void write4BitValue(DataOutputStream outputStream,
-//                                       byte value) throws IOException {
-//        outputStream.writeBoolean((value >> 3) == 1);
-//        outputStream.writeBoolean(((value & 0b0100) >> 2) == 1);
-//        outputStream.writeBoolean(((value & 0b0010) >> 1) == 1);
-//        outputStream.writeBoolean((value & 0b0001) == 1);
-//    }
-
     private static void writeStringByQNameRules(DataOutputStream outputStream, String[] strParts) throws IOException {
         for (String part : strParts) {
             outputStream.writeByte(part.length());
@@ -92,21 +73,29 @@ public class DNSPacketCrafter {
 
     private static void writeRData(DataOutputStream outputStream, ParsedRR rr) throws IOException {
         if (rr.getType() == RRType.A.getValue()) {
-            writeIP(outputStream, rr.get_rData(), "\\.");
+            writeIP(outputStream, rr.get_rData(), "\\.", 10);
         } else if (rr.getType() == RRType.AAAA.getValue()) {
-            writeIP(outputStream, rr.get_rData(), ":");
-        } else if (rr.getType() == RRType.NS.getValue() || rr.getType() == RRType.PTR.getValue()) {
+            writeIP(outputStream, rr.get_rData(), ":", 16);
+        } else if (rr.getType() == RRType.NS.getValue() || rr.getType() == RRType.PTR.getValue()) {  // тут может закрасться ошибка
             writeStringByQNameRules(outputStream, rr.get_rData().split("\\."));
         }
 
     }
 
-    private static void writeIP(DataOutputStream outputStream, String rData, String delimiter) throws IOException {
+    private static void writeIP(DataOutputStream outputStream, String rData, String delimiter, int radix) throws IOException {
         System.out.println(Arrays.toString(rData.split(delimiter)));
         Integer[] parts = Arrays.stream(rData.split(delimiter))
-                .map(Integer::parseInt)
+                .map(p -> Integer.parseInt(p, radix))
                 .toArray(Integer[]::new);
-        for (Integer part : parts)
-            outputStream.writeByte(part);
+
+        if (radix == 10){
+            for (Integer part : parts)
+                outputStream.writeByte(part);
+        } else {
+            for (Integer part : parts) {
+                outputStream.writeByte(part >> 8);
+                outputStream.writeByte(part & 0xff);
+            }
+        }
     }
 }

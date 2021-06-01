@@ -3,14 +3,20 @@ package storage;
 import rr_field_codes.RRType;
 
 import java.util.*;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class Storage {
     private final Map<String, List<String>> nameWithIP;  // domain name <- IP
     private final Map<String, RRsByType> ipWithRecords;  // IP <- RR
+    private long lastCheckingTime; // in seconds
 
     public Storage() {  // Интересно, что будет с не полностью разрешенными доменными именами
-        nameWithIP = new HashMap<>();
-        ipWithRecords = new HashMap<>();
+        nameWithIP = Collections.synchronizedMap(new HashMap<>());
+        ipWithRecords = Collections.synchronizedMap(new HashMap<>());
+        lastCheckingTime = 0;
+        startTTLChecking();
     }
 
     public void setDataForName(String name, String ip, RRType type, List<Record> data) {
@@ -19,10 +25,10 @@ public class Storage {
                 ipWithRecords.put(
                         ip,
                         new RRsByType(
-                                new ArrayList<>(Collections.emptyList()),
-                                new ArrayList<>(Collections.emptyList()),
-                                new ArrayList<>(Collections.emptyList()),
-                                new ArrayList<>(Collections.emptyList())
+                                new LinkedList<>(Collections.emptyList()),
+                                new LinkedList<>(Collections.emptyList()),
+                                new LinkedList<>(Collections.emptyList()),
+                                new LinkedList<>(Collections.emptyList())
                         )
                 );
             nameWithIP.get(name).add(ip);
@@ -31,10 +37,10 @@ public class Storage {
             ipWithRecords.put(
                     ip,
                     new RRsByType(
-                            new ArrayList<>(Collections.emptyList()),
-                            new ArrayList<>(Collections.emptyList()),
-                            new ArrayList<>(Collections.emptyList()),
-                            new ArrayList<>(Collections.emptyList())
+                            new LinkedList<>(Collections.emptyList()),
+                            new LinkedList<>(Collections.emptyList()),
+                            new LinkedList<>(Collections.emptyList()),
+                            new LinkedList<>(Collections.emptyList())
                     )
             );
         }
@@ -42,7 +48,8 @@ public class Storage {
     }
 
     private void setDataForIP(String ip, List<Record> data, RRType type) {
-        if (data == null) return;
+        if (type == null) System.out.println("dasdasda");
+        if (data == null || type == null) return;
         switch (type) {
             case A:
                 ipWithRecords.get(ip).typeA.addAll(data);
@@ -104,5 +111,93 @@ public class Storage {
             typeNS = ofNS;
             typePTR = ofPTR;
         }
+
+        private List<Record> getAllRecords() {
+            return Stream.concat(
+                    Stream.concat(typeA.stream(), typeAAAA.stream()),
+                    Stream.concat(typeNS.stream(), typePTR.stream())
+            ).collect(Collectors.toList());
+        }
+    }
+
+    private void startTTLChecking() {
+        new Thread(
+                () -> {
+                    while (true){
+                        try {
+                            TimeUnit.SECONDS.sleep(10);
+                        } catch (InterruptedException ignored) { }
+
+                        long delta = System.currentTimeMillis() / 1000 - lastCheckingTime;
+                        deleteRecords(findRecordsToDelete(delta));
+                        System.out.println(nameWithIP.size());
+                        System.out.println(ipWithRecords.size());
+                        lastCheckingTime = System.currentTimeMillis() / 1000;
+                    }
+                }
+        ).start();
+
+    }
+
+    private HashSet<Record> findRecordsToDelete(long delta) {
+        HashSet<Record> toDelete = new HashSet<>();
+        synchronized (ipWithRecords) {
+            for (String ip : ipWithRecords.keySet()) {
+                for (Record record : ipWithRecords.get(ip).getAllRecords()) {
+                    if (record.getRecord().getTtl() <= delta) {
+                        toDelete.add(record);
+                    } else {
+                        record.getRecord().decreaseTtl(delta);
+                    }
+                }
+            }
+        }
+
+        return toDelete;
+    }
+
+    private void deleteRecords(Set<Record> toDelete) {
+        for (String ip : ipWithRecords.keySet()) {
+            ipWithRecords.get(ip).typeA.removeIf(toDelete::contains);
+            ipWithRecords.get(ip).typeAAAA.removeIf(toDelete::contains);
+            ipWithRecords.get(ip).typeNS.removeIf(toDelete::contains);
+            ipWithRecords.get(ip).typePTR.removeIf(toDelete::contains);
+        }
+
+        deleteIPs();
+        deleteNames();
+    }
+
+    private void deleteIPs() {
+        HashSet<String> keysToDelete = new HashSet<>();
+        for (String ip : ipWithRecords.keySet()) {
+            if (ipWithRecords.get(ip).typeA.size() == 0 &&
+                    ipWithRecords.get(ip).typeAAAA.size() == 0 &&
+                    ipWithRecords.get(ip).typeNS.size() == 0 &&
+                    ipWithRecords.get(ip).typePTR.size() == 0)
+                keysToDelete.add(ip);
+        }
+
+        for (String key : keysToDelete)
+            ipWithRecords.remove(key);
+    }
+
+    private void deleteNames() {
+        HashSet<String> ipsToDelete = new HashSet<>();
+        for (String name : nameWithIP.keySet()) {
+            for (String ip : nameWithIP.get(name)) {
+                if (!ipWithRecords.containsKey(ip))
+                    ipsToDelete.add(ip);
+            }
+        }
+
+        HashSet<String> namesToDelete = new HashSet<>();
+        for (String name : nameWithIP.keySet()) {
+            nameWithIP.get(name).removeIf(ipsToDelete::contains);
+            if (nameWithIP.get(name).size() == 0) namesToDelete.add(name);
+        }
+
+        nameWithIP.keySet().removeIf(namesToDelete::contains);
+
     }
 }

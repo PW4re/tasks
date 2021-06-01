@@ -4,7 +4,7 @@ public class ParsedRR implements ParsedSection {
     private final String name, rData;
     private final short type, clazz;
     private final char rdLength;
-    private final long ttl;
+    private long ttl;
 
     public ParsedRR(String name, short type, short clazz, long ttl, char rdLength, String rData) {
         this.name     = name;
@@ -18,6 +18,11 @@ public class ParsedRR implements ParsedSection {
     public char getRdLength() { return rdLength; }
 
     public long getTtl() { return ttl; }
+
+    public void decreaseTtl(long delta) {
+        if (delta <= 0) return;
+        ttl -= delta;
+    }
 
     public String getName() { return name; }
 
