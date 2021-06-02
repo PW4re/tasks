@@ -19,9 +19,9 @@ class OutputCrafter:
         except KeyError:
             self._check_error(json.loads(response))
             sys.exit(5)
-        print('Названия фотоальбомов: ' + ' '.join(
+        print('Названия фотоальбомов: ' + ', '.join(
             [item['title'] for item in response_parts['items']]
-        ))
+        ) + r'.')
 
     def craft_friends_table(self, response: str):
         try:
