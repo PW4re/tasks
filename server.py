@@ -34,7 +34,7 @@ def get_sntp_packet(input_packet: bytes, recv_time: bytes, delta: int) -> bytes:
     precision = struct.pack('!b', -20)
     delay = struct.pack('!i', 0)
     dispersion = struct.pack('!i', 0)
-    ref_id = struct.pack('!s', b'LOCL')
+    ref_id = struct.pack('!i', 0)
     fake_begin_time = get_fake_time(delta)
     input_time = input_packet[40:48]
     return (first_byte + stratum + poll + precision + delay +
